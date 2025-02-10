@@ -60,8 +60,8 @@ all: main-build
 main-build: WARG_EFS_6SPM.elf secondary-outputs
 
 # Tool invocations
-WARG_EFS_6SPM.elf WARG_EFS_6SPM.map: $(OBJS) $(USER_OBJS) C:\Users\Bryan351018\STM32CubeIDE\workspace_1.16.1\WARG_EFS_6SPM\STM32L431KCUX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "WARG_EFS_6SPM.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\Bryan351018\STM32CubeIDE\workspace_1.16.1\WARG_EFS_6SPM\STM32L431KCUX_FLASH.ld" --specs=nosys.specs -Wl,-Map="WARG_EFS_6SPM.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+WARG_EFS_6SPM.elf WARG_EFS_6SPM.map: $(OBJS) $(USER_OBJS) /Users/adityasharma/Desktop/UWARG/efs-can-power-module/STM32L431KCUX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "WARG_EFS_6SPM.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"/Users/adityasharma/Desktop/UWARG/efs-can-power-module/STM32L431KCUX_FLASH.ld" --specs=nosys.specs -Wl,-Map="WARG_EFS_6SPM.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 
