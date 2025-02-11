@@ -35,9 +35,7 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 ADC_HandleTypeDef hadc1;
-
 CAN_HandleTypeDef hcan1;
-
 I2C_HandleTypeDef hi2c1;
 I2C_HandleTypeDef hi2c3;
 
@@ -75,7 +73,7 @@ void cell_select1() {
     }
 
   printf("\n");
-  
+  //-----------------------------------------------------------------------------
 
   uint8_t data[2] = {0x0 , 0x1}; //To Select Cell 1 
   uint8_t I2C_CellSelect1_Address = 0x21;
@@ -92,8 +90,11 @@ void cell_select1() {
 }
 
 uint16_t read_cell1_voltage(){
+  //Addresses to read and write from cell1
   uint8_t I2C_CELL1_Read_Address = 0x31 << 1;
   uint8_t I2C_CELL1_Write_Address = 0x31 << 1;
+
+  //Addresses for accessing VREF 
   uint8_t I2C_VREF_Write = 0x30;
   uint8_t I2C_VREF_Read = 0x31;
 
@@ -102,14 +103,13 @@ uint16_t read_cell1_voltage(){
 
   HAL_ADC_Start(&hadc1);
     
-    
   if (HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY) == HAL_OK){
       adc_value = HAL_ADC_GetValue(&hadc1);
   }
 
   HAL_ADC_Stop(&hadc1); 
 
-  uint8_t VCOUT_CELL1 = ((float)adc_value / FULL_SCALE_COUNT) * VREF_NOMINAL;
+  uint8_t VCOUT_CELL1 = ((float)adc_value / FULL_SCALE_COUNT) * VREF_NOMINAL; // Formula according to datasheet
 
   uint8_t reg_addr1 = 0x11;  // VC1_CAL register
   uint8_t reg_addr2 = 0x10;
