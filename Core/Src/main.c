@@ -18,13 +18,10 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "stdio.h"
-
-
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "stdio.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -39,118 +36,96 @@ CAN_HandleTypeDef hcan1;
 I2C_HandleTypeDef hi2c1;
 I2C_HandleTypeDef hi2c3;
 
-const int FULL_SCALE_COUNT  = 4095; // 12 bit ADC count 
+const int FULL_SCALE_COUNT  = 4095; // 12 bit ADC count
 const int VREF_NOMINAL = 1.5; //Volt
-const int I2C_GROUP_ADDRESS = 0x20; 
-const int GVCOUT = 0.3; //Set according to REF_SEL 
+const int I2C_GROUP_ADDRESS = 0x20;
+const int GVCOUT = 0.3; //Set according to REF_SEL
+
+
+int _write(int file, char *ptr, int len)
+   {
+     (void)file;
+     int DataIdx;
+     for (DataIdx = 0; DataIdx < len; DataIdx++)
+     {
+       ITM_SendChar(*ptr++);
+     }
+     return len;
+   }
 
 void cell_select1() {
 
-	// testing addresses for I2C communication
-  for (uint8_t i = 0; i < 128; i++) {
+	uint8_t data[1] = {0x08}; // To Select Cell 1
+	uint16_t I2C_CellSelect1_Address = 0X21; // 0x42, write mode
 
-	  if (HAL_I2C_IsDeviceReady(&hi2c1, (uint16_t)(i<<1), 3, 5) == HAL_OK) {
-		  printf("%2x ", i);
-	  } else {
-		  printf("-- ");
-	  }
+	// Send the data over I2C
+	HAL_StatusTypeDef status = HAL_I2C_Master_Transmit(&hi2c1, I2C_CellSelect1_Address, data, sizeof(data), HAL_MAX_DELAY);
 
-	  if (i > 0 && (i + 1) % 16 == 0) printf("\n");
+	// Check for errors
+	if (status != HAL_OK) {
+	    printf("I2C write failed! Error code: %d\n", status);
+	} else {
+	    printf("Cell 1 selected successfully.\n");
+	}
+}
 
-  }
+uint16_t read_cell1_voltage(void) {
+    uint8_t I2C_CELL1_ADDRESS = 0x31;  // VC1_CAL
+    uint8_t I2C_VREF_ADDRESS = 0x30;   // VREF_CAL
+    uint8_t I2C_VC_CAL_EXT_1 = 0x37;   // VC_CAL_EXT_1
 
-  printf("\n");
+    uint16_t adc_value = 0;
 
-  for (uint8_t i = 0; i < 128; i++) {
-
-  	  if (HAL_I2C_IsDeviceReady(&hi2c3, (uint16_t)(i<<1), 3, 5) == HAL_OK) {
-  		  printf("%2x ", i);
-  	  } else {
-  		  printf("-- ");
-  	  }
-
-  	  if (i > 0 && (i + 1) % 16 == 0) printf("\n");
+    HAL_ADC_Start(&hadc1);
+    if (HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY) == HAL_OK) {
+        adc_value = HAL_ADC_GetValue(&hadc1);
     }
+    HAL_ADC_Stop(&hadc1);
 
-  printf("\n");
-  //-----------------------------------------------------------------------------
+    float VCOUT_CELL1 = ((float)adc_value / FULL_SCALE_COUNT) * VREF_NOMINAL;
 
-  uint8_t data[2] = {0x0 , 0x1}; //To Select Cell 1 
-  uint8_t I2C_CellSelect1_Address = 0x21;
+    uint8_t data1 = 0; // VC1_CAL
+    uint8_t data2 = 0; // VREF_CAL
+    uint8_t data3 = 0; // VC_CAL_EXT_1
 
-  // Send the data over I2C
-  HAL_StatusTypeDef status = HAL_I2C_Master_Transmit(&hi2c1 , I2C_CellSelect1_Address, data, sizeof(data), HAL_MAX_DELAY);
+    if (HAL_I2C_Master_Receive(&hi2c1, I2C_CELL1_ADDRESS, &data1, 1, 100) != HAL_OK) {
+        printf("I2C Read Error VC1_CAL! Status: %d, ErrorCode: %lu\n", HAL_I2C_GetState(&hi2c1), hi2c1.ErrorCode);
+    }
+    HAL_Delay(1);
 
-  // Check for errors
-  if (status != HAL_OK) {
-    printf("I2C write failed! Error code: %d\n", status);
-  } else {
-     printf("Cell 1 selected successfully.\n");
-  }
+    if (HAL_I2C_Master_Receive(&hi2c1, I2C_VREF_ADDRESS, &data2, 1, 100) != HAL_OK) {
+        printf("I2C Read Error VREF_CAL! Status: %d, ErrorCode: %lu\n", HAL_I2C_GetState(&hi2c1), hi2c1.ErrorCode);
+    }
+    HAL_Delay(1);
+
+    if (HAL_I2C_Master_Receive(&hi2c1, I2C_VC_CAL_EXT_1, &data3, 1, 100) != HAL_OK) {
+        printf("I2C Read Error VC_CAL_EXT_1! Status: %d, ErrorCode: %lu\n", HAL_I2C_GetState(&hi2c1), hi2c1.ErrorCode);
+    }
+    HAL_Delay(1);
+
+    int8_t vref_gain_correction = data2 & 0x1F;
+    if (vref_gain_correction & 0x10) vref_gain_correction |= 0xE0;
+    int8_t offset_correction_vref = data2 >> 5;
+    if (offset_correction_vref & 0x04) offset_correction_vref |= 0xF8;
+
+    int8_t gain_correction = data1 & 0x1F;
+    if (gain_correction & 0x10) gain_correction |= 0xE0;
+    int8_t offset_correction = ((data3 & 0x80) >> 2) | (data1 >> 5);
+    if (offset_correction & 0x20) offset_correction |= 0xC0;
+
+    float gc_vref = vref_gain_correction * 0.001f;
+    float oc_vref = offset_correction_vref * 0.001f;
+    float vref_corrected = (1.0f + gc_vref) * VREF_NOMINAL + oc_vref;
+
+    VCOUT_CELL1 = ((float)adc_value / FULL_SCALE_COUNT) * vref_corrected;
+
+    float gc_cell = gain_correction * 0.001f;
+    float oc_cell = offset_correction * 0.001f;
+    float VCOUT_corrected = (VCOUT_CELL1 + oc_cell) * (1.0f + gc_cell);
+
+    float Final_CELL1_Voltage = VCOUT_corrected / 0.3f;
+    return (uint16_t)(Final_CELL1_Voltage * 1000); // mV
 }
-
-uint16_t read_cell1_voltage(){
-  //Addresses to read and write from cell1
-  uint8_t I2C_CELL1_Read_Address = 0x31 << 1;
-  uint8_t I2C_CELL1_Write_Address = 0x31 << 1;
-
-  //Addresses for accessing VREF 
-  uint8_t I2C_VREF_Write = 0x30;
-  uint8_t I2C_VREF_Read = 0x31;
-
-
-  uint16_t adc_value = 0;
-
-  HAL_ADC_Start(&hadc1);
-    
-  if (HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY) == HAL_OK){
-      adc_value = HAL_ADC_GetValue(&hadc1);
-  }
-
-  HAL_ADC_Stop(&hadc1); 
-
-  uint8_t VCOUT_CELL1 = ((float)adc_value / FULL_SCALE_COUNT) * VREF_NOMINAL; // Formula according to datasheet
-
-  uint8_t reg_addr1 = 0x11;  // VC1_CAL register
-  uint8_t reg_addr2 = 0x10;
-  uint8_t data1 = 0;
-  uint8_t data2 = 0;
-
-
-
-  if(HAL_I2C_Master_Transmit(&hi2c1, I2C_CELL1_Write_Address, &data1, 1, HAL_MAX_DELAY) != HAL_OK) {
-    printf("I2C Write Error!\n");
-    return;
-  }
-
-  if (HAL_I2C_Master_Receive(&hi2c1, I2C_CELL1_Read_Address, &data1, 1, HAL_MAX_DELAY) != HAL_OK) {
-    printf("I2C Read Error!\n");
-    return;
-  }
-  
-
-  if(HAL_I2C_Master_Transmit(&hi2c1, I2C_VREF_Write, &reg_addr2, 1, HAL_MAX_DELAY) != HAL_OK) {
-    printf("I2C Write Error!\n");
-    return;
-  }
-
-  if (HAL_I2C_Master_Receive(&hi2c1, I2C_VREF_Read , &data2, 1, HAL_MAX_DELAY) != HAL_OK) {
-    printf("I2C Read Error!\n");
-    return;
-  }
-
-  uint8_t vref_gain_correction = (data2 >> 4) & 0x0F;
-  uint8_t offset_correction = (data1 >> 4) & 0x0F;
-  uint8_t gain_correction = data1 & 0x0F;
-
-
-
-  uint8_t Final_CELL1_Voltage = ((VCOUT_CELL1 * vref_gain_correction + offset_correction)/0.3) * (1 + gain_correction);
-  return Final_CELL1_Voltage;
-
-}
-
-
 
 /* USER CODE END PD */
 
@@ -160,6 +135,12 @@ uint16_t read_cell1_voltage(){
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+ADC_HandleTypeDef hadc1;
+
+CAN_HandleTypeDef hcan1;
+
+I2C_HandleTypeDef hi2c1;
+I2C_HandleTypeDef hi2c3;
 
 /* USER CODE BEGIN PV */
 
@@ -215,6 +196,22 @@ int main(void)
   MX_I2C3_Init();
   MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
+  // Enable V3P3 regulator
+   uint8_t status_data = 0x01;
+   if (HAL_I2C_Master_Transmit(&hi2c1, 0x20, &status_data, 1, 100) != HAL_OK) {
+         printf("V3P3 Enable Failed! ErrorCode: %lu\n", hi2c3.ErrorCode);
+   }
+   HAL_Delay(100); // Wait for V3P3 to stabilize
+
+    // Set REFSEL = 0 (1.5V VREF)
+   uint8_t config_data = 0x00;
+   if (HAL_I2C_Master_Transmit(&hi2c1, 0x24, &config_data, 1, 100) != HAL_OK) {
+        printf("REFSEL Config Failed! ErrorCode: %lu\n", hi2c3.ErrorCode);
+   }
+   HAL_Delay(10);
+
+
+
 
   /* USER CODE END 2 */
 
@@ -225,8 +222,10 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+
 	  cell_select1();
 	  read_cell1_voltage();
+	  HAL_Delay(1000);
   }
   /* USER CODE END 3 */
 }
@@ -386,7 +385,7 @@ static void MX_I2C1_Init(void)
 
   /* USER CODE END I2C1_Init 1 */
   hi2c1.Instance = I2C1;
-  hi2c1.Init.Timing = 0x00100D14;
+  hi2c1.Init.Timing = 0x00400D10;
   hi2c1.Init.OwnAddress1 = 0;
   hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
   hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
