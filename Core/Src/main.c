@@ -40,7 +40,7 @@ const int FULL_SCALE_COUNT  = 4095; // 12 bit ADC count
 const int VREF_NOMINAL = 1.5; //Volt
 const int I2C_GROUP_ADDRESS = 0x20;
 const int GVCOUT = 0.3; //Set according to REF_SEL
-
+uint16_t adc_data[5] = {0}; //Storage for ADC return values, indexed from lowest to highest (Ex IN7 - IN16)
 
 int _write(int file, char *ptr, int len)
    {
@@ -52,6 +52,28 @@ int _write(int file, char *ptr, int len)
      }
      return len;
    }
+
+// Writing this function since the ADC communication uses polling, so getting for specific lines is complex
+void adc_read(uint16_t* data_writeto){
+
+	uint16_t adc_value = 0;
+
+	for(int i = 0; i < 5; i++){
+
+		HAL_ADC_Start(&hadc1);
+		    if (HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY) == HAL_OK) {
+		        adc_value = HAL_ADC_GetValue(&hadc1);
+		    }
+		    HAL_ADC_Stop(&hadc1);
+
+		data_writeto[i] = adc_value;
+	}
+}
+
+float adc_correction(uint16_t value){
+
+	return ((float)value / FULL_SCALE_COUNT) * VREF_NOMINAL;
+}
 
 void cell_select1() {
 
@@ -77,10 +99,10 @@ uint16_t read_cell1_voltage(void) {
     uint16_t adc_value = 0;
 
     HAL_ADC_Start(&hadc1);
-    if (HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY) == HAL_OK) {
-        adc_value = HAL_ADC_GetValue(&hadc1);
-    }
-    HAL_ADC_Stop(&hadc1);
+        if (HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY) == HAL_OK) {
+            adc_value = HAL_ADC_GetValue(&hadc1);
+        }
+        HAL_ADC_Stop(&hadc1);
 
     float VCOUT_CELL1 = ((float)adc_value / FULL_SCALE_COUNT) * VREF_NOMINAL;
 
@@ -125,6 +147,27 @@ uint16_t read_cell1_voltage(void) {
 
     float Final_CELL1_Voltage = VCOUT_corrected / 0.3f;
     return (uint16_t)(Final_CELL1_Voltage * 1000); // mV
+}
+
+float read_current(){
+
+	// These values will be set outside this function, but for now I don't want to break anything
+	_Bool REF_SEL = 0;
+	float VIOUT_GAIN = 50.0;
+
+	adc_read(adc_data);
+
+	float viout_voltage = adc_correction(adc_data[2]);
+	float current = 0;
+
+	// Voltage Correction for 0 current
+	if(!REF_SEL){
+		current = viout_voltage - 0.75;
+	} else {
+		current = viout_voltage - 1.5;
+	}
+
+	return (current / (VIOUT_GAIN * 0.001));
 }
 
 /* USER CODE END PD */
@@ -385,7 +428,7 @@ static void MX_I2C1_Init(void)
 
   /* USER CODE END I2C1_Init 1 */
   hi2c1.Instance = I2C1;
-  hi2c1.Init.Timing = 0x00400D10;
+  hi2c1.Init.Timing = 0x00100D14;
   hi2c1.Init.OwnAddress1 = 0;
   hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
   hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;

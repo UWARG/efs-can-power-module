@@ -61,6 +61,8 @@ void Error_Handler(void);
 #define ADC2_FILT_GPIO_Port GPIOA
 #define OVERCURRENT_Pin GPIO_PIN_3
 #define OVERCURRENT_GPIO_Port GPIOA
+#define VIOUT_FILT_Pin GPIO_PIN_4
+#define VIOUT_FILT_GPIO_Port GPIOA
 #define VCOUT1_FILT_Pin GPIO_PIN_5
 #define VCOUT1_FILT_GPIO_Port GPIOA
 #define ADC1_FILT_Pin GPIO_PIN_0
